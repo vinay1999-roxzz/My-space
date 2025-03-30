@@ -1,0 +1,35 @@
+# Set Proxy
+[System.Environment]::SetEnvironmentVariable("HTTP_PROXY", "http://cloud-proxy.azure.blackrock.com:9443", "Machine")
+[System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", "http://cloud-proxy.azure.blackrock.com:9443", "Machine")
+[System.Environment]::SetEnvironmentVariable("NO_PROXY", "localhost,*.blackrock.com,*.blkint.com", "Machine")
+
+# Install root cert
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("blackrock-root-ca.cer")
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
+$store.Open("ReadWrite")
+$store.Add($cert)
+$store.Close()
+
+# Install Git
+Start-Process -FilePath "Git-Installer.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
+
+# Install VS Code
+Start-Process -FilePath "VSCode-Installer.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
+
+# Install PowerShell 7
+Start-Process -FilePath "PowerShell-7-x64.msi" -ArgumentList "/quiet" -Wait
+
+# Set Git Proxy
+git config --global http.proxy http://cloud-proxy.azure.blackrock.com:9443
+git config --global https.proxy http://cloud-proxy.azure.blackrock.com:9443
+
+# Clone ALTS-Scripts
+$altsPath = "C:\Users\$env:USERNAME\ALTS-Scripts"
+git clone https://your-repo-url/ALTS-Scripts.git $altsPath
+
+# Create D:\credentials and clone svcaltops
+New-Item -ItemType Directory -Force -Path "D:\credentials"
+git clone https://your-repo-url/svcaltops.git "D:\credentials\svcaltops"
+
+# Install SqlServer module
+Install-Module -Name SqlServer -RequiredVersion 21.1.18218 -Scope AllUsers -Force
