@@ -1,0 +1,186 @@
+Step-by-Step Guide: Automating VM Setup Using NuGet and JFrog Artifactory
+
+
+---
+
+1. Folder Structure
+
+This is the required project folder structure:
+
+MyCustomSetup/                       <-- Root folder
+├── MyCustomSetup.nuspec            <-- NuGet descriptor file
+└── tools/                          <-- Installation scripts & files
+    ├── install.ps1                 <-- PowerShell setup script
+    ├── Git-Installer.exe           <-- Git installer (silent mode)
+    ├── VSCode-Installer.exe        <-- VS Code installer (silent mode)
+    ├── PowerShell-7-x64.msi        <-- PowerShell 7 MSI
+    ├── blackrock-root-ca.cer       <-- Root certificate file
+
+
+---
+
+2. File Contents
+
+A. MyCustomSetup.nuspec
+
+This file defines the NuGet package metadata:
+
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>MyCustomSetup</id>
+    <version>1.0.0</version>
+    <authors>YourName</authors>
+    <description>Setup tools and configs on build/command VMs</description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
+
+B. tools/install.ps1
+
+PowerShell script to install dependencies on VMs:
+
+# Set Proxy
+[System.Environment]::SetEnvironmentVariable("HTTP_PROXY", "http://cloud-proxy.azure.blackrock.com:9443", "Machine")
+[System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", "http://cloud-proxy.azure.blackrock.com:9443", "Machine")
+[System.Environment]::SetEnvironmentVariable("NO_PROXY", "localhost,*.blackrock.com,*.blkint.com", "Machine")
+
+# Install root certificate
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("blackrock-root-ca.cer")
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
+$store.Open("ReadWrite")
+$store.Add($cert)
+$store.Close()
+
+# Install Git
+Start-Process -FilePath "Git-Installer.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
+
+# Install VS Code
+Start-Process -FilePath "VSCode-Installer.exe" -ArgumentList "/VERYSILENT /NORESTART" -Wait
+
+# Install PowerShell 7
+Start-Process -FilePath "PowerShell-7-x64.msi" -ArgumentList "/quiet" -Wait
+
+# Set Git Proxy
+git config --global http.proxy http://cloud-proxy.azure.blackrock.com:9443
+git config --global https.proxy http://cloud-proxy.azure.blackrock.com:9443
+
+# Clone ALTS-Scripts
+git clone https://your-repo-url/ALTS-Scripts.git "C:\Users\$env:USERNAME\ALTS-Scripts"
+
+# Create directory and clone svcaltops
+New-Item -ItemType Directory -Force -Path "D:\credentials"
+git clone https://your-repo-url/svcaltops.git "D:\credentials\svcaltops"
+
+# Install SqlServer module
+Install-Module -Name SqlServer -RequiredVersion 21.1.18218 -Scope AllUsers -Force
+
+
+---
+
+3. Create a NuGet Package
+
+Install NuGet CLI
+
+choco install nuget.commandline -y
+
+Or download from: https://www.nuget.org/downloads
+
+Create the .nupkg File
+
+Run this command in the folder containing MyCustomSetup.nuspec:
+
+nuget pack MyCustomSetup.nuspec
+
+This generates:
+
+MyCustomSetup.1.0.0.nupkg
+
+
+---
+
+4. Upload to JFrog Artifactory
+
+Option 1: Web UI
+
+1. Go to your NuGet repository (e.g., nuget-local).
+
+
+2. Click Deploy.
+
+
+3. Upload MyCustomSetup.1.0.0.nupkg.
+
+
+
+Option 2: cURL Command
+
+curl -u your-username:your-apikey -T "MyCustomSetup.1.0.0.nupkg" "https://your-company.jfrog.io/artifactory/api/nuget/nuget-local"
+
+
+---
+
+5. Deploy on VMs via Azure DevOps Pipeline
+
+Step 1: Download and Install Package on VM
+
+# Download nuget.exe
+Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "C:\Setup\nuget.exe"
+
+# Add JFrog as a NuGet source
+C:\Setup\nuget.exe sources Add -Name jfrog -Source "https://your-company.jfrog.io/artifactory/api/nuget/nuget-local" -UserName "your-username" -Password "your-apikey"
+
+# Install package
+C:\Setup\nuget.exe install MyCustomSetup -Source jfrog -OutputDirectory C:\Setup
+
+# Execute the installation script
+powershell -ExecutionPolicy Bypass -File "C:\Setup\MyCustomSetup.1.0.0\tools\install.ps1"
+
+
+---
+
+6. Automating Deployment in Azure DevOps Pipeline
+
+Create a Pipeline in Azure DevOps
+
+1. Go to Azure DevOps → Select Pipelines → Click New Pipeline.
+
+
+2. Choose YAML Pipeline and link it to your repo.
+
+
+3. Add the following YAML configuration:
+
+
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  name: YourAgentPoolName
+
+steps:
+- task: PowerShell@2
+  displayName: "Download and Install Setup Package"
+  inputs:
+    targetType: 'inline'
+    script: |
+      Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "C:\Setup\nuget.exe"
+      C:\Setup\nuget.exe sources Add -Name jfrog -Source "https://your-company.jfrog.io/artifactory/api/nuget/nuget-local" -UserName "your-username" -Password "your-apikey"
+      C:\Setup\nuget.exe install MyCustomSetup -Source jfrog -OutputDirectory C:\Setup
+      powershell -ExecutionPolicy Bypass -File "C:\Setup\MyCustomSetup.1.0.0\tools\install.ps1"
+
+
+---
+
+Summary
+
+✅ Created NuGet package with all installation files ✅ Uploaded package to JFrog Artifactory ✅ Deployed package on VMs using Azure DevOps Pipeline
+
+This ensures automated, consistent setup of all new build & command servers!
+
+ 
