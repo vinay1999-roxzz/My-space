@@ -183,4 +183,6 @@ Summary
 
 This ensures automated, consistent setup of all new build & command servers!
 
+https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+
  
