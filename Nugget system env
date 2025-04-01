@@ -1,0 +1,1 @@
+[System.Environment]::SetEnvironmentVariable("Path", "$env:USERPROFILE;$env:Path", [System.EnvironmentVariableTarget]::User) 
