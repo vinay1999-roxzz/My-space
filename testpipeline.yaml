@@ -1,0 +1,38 @@
+trigger:
+- main
+
+resources:
+
+
+pool:
+
+steps:
+
+- task: PowerShell@2
+  name: RunCheckScript
+  inputs:
+    targetType: 'filePath'
+    filePath: '2464757/test.ps1'
+  continueOnError: true
+  outputs:
+    GitAndVSCode: $[dependencies.RunCheckScript.outputs['GitAndVSCode']]
+    PowerShell7: $[dependencies.RunCheckScript.outputs['PowerShell7']]
+    SQLServerPowerShell: $[dependencies.RunCheckScript.outputs['SQLServerPowerShell']]
+
+- task: PowerShell@2
+  condition: eq(variables['GitAndVSCode'], 'KO')
+  inputs:
+    targetType: 'filePath'
+    filePath: '2464757/Install-Git&VsCode.ps1'
+
+- task: PowerShell@2
+  condition: eq(variables['PowerShell7'], 'KO')
+  inputs:
+    targetType: 'filePath'
+    filePath: '2464757/Install-Powershell7.ps1'
+
+- task: PowerShell@2
+  condition: eq(variables['SQLServerPowerShell'], 'KO')
+  inputs:
+    targetType: 'filePath'
+    filePath: '2464757/Install-SQLServerPowershell.ps1'
