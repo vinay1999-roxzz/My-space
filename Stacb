@@ -1,0 +1,94 @@
+param (
+    # Parameters passed from pipeline (all hardcoded or sensitive values)
+    [Parameter(Mandatory=$true)][string]$BU,
+    [Parameter(Mandatory=$true)][string]$InstanceType,
+    [Parameter(Mandatory=$true)][string]$BLKCostCenter,
+    [Parameter(Mandatory=$true)][string]$BLKDataClass,
+    [Parameter(Mandatory=$true)][string]$BLKEnvironment,
+    [Parameter(Mandatory=$true)][string]$S3SourceBucket,
+    [Parameter(Mandatory=$true)][string]$DomainPass,
+    [Parameter(Mandatory=$true)][string]$NetbiosDomain,
+    [Parameter(Mandatory=$true)][string]$ScriptFolder,
+    [Parameter(Mandatory=$true)][string]$WSUS,
+    [Parameter(Mandatory=$true)][string]$WSUSGroup,
+    [Parameter(Mandatory=$true)][string]$KeyName,
+    [Parameter(Mandatory=$true)][string]$TemplatePath,      # URL to template in ADO
+    [Parameter(Mandatory=$true)][string]$ExecutionMode,     # TEST or EXECUTE
+    [Parameter(Mandatory=$true)][string]$CyberArkUser,
+    [Parameter(Mandatory=$true)][string]$CyberArkEncrypted,
+    [Parameter(Mandatory=$true)][string]$ADO_PAT           # Secure string in pipeline!
+)
+
+# Download the CloudFormation template from Azure DevOps repo
+$base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$ADO_PAT"))
+$headers = @{
+    Authorization = "Basic $base64AuthInfo"
+}
+Write-Host "Downloading template from $TemplatePath..."
+try {
+    $templateBody = Invoke-RestMethod -Uri $TemplatePath -Headers $headers -Method Get
+    Write-Host "Template download successful!"
+} catch {
+    Write-Error "Failed to download template from $TemplatePath"
+    throw $_
+}
+
+# === Dynamic parameter logic remains as in your script, e.g.:
+# $client, $kmsArn, $Script:SecurityGroupIds, $stackName, $Script:subnetId, etc.
+# (Get these from database, query, logic...)
+
+# Example static parameters:
+$parameters = @(
+    @{ ParameterKey = "BU";               ParameterValue = $BU }
+    @{ ParameterKey = "InstanceType";     ParameterValue = $InstanceType }
+    @{ ParameterKey = "BLKCostCenter";    ParameterValue = $BLKCostCenter }
+    @{ ParameterKey = "BLKDataClass";     ParameterValue = $BLKDataClass }
+    @{ ParameterKey = "BLKEnvironment";   ParameterValue = $BLKEnvironment }
+    @{ ParameterKey = "ClientName";       ParameterValue = $client }
+    @{ ParameterKey = "S3SourceBucket";   ParameterValue = $S3SourceBucket }
+    @{ ParameterKey = "DomainPass";       ParameterValue = $DomainPass }
+    @{ ParameterKey = "KMSkeyARN";        ParameterValue = $kmsArn }
+    @{ ParameterKey = "NetbiosDomain";    ParameterValue = $NetbiosDomain }
+    @{ ParameterKey = "ScriptFolder";     ParameterValue = $ScriptFolder }
+    @{ ParameterKey = "SecurityGroupIds"; ParameterValue = ($Script:SecurityGroupIds -join ",") }
+    @{ ParameterKey = "ServerName";       ParameterValue = $stackName }
+    @{ ParameterKey = "SubnetID";         ParameterValue = $Script:subnetId }
+    @{ ParameterKey = "WSUS";             ParameterValue = $WSUS }
+    @{ ParameterKey = "WSUSGroup";        ParameterValue = $WSUSGroup }
+    @{ ParameterKey = "KeyName";          ParameterValue = $KeyName }
+)
+
+# === Credentials and audit block stays as is (no changes)
+$TargetAWSAccountId = $targetInstance.AccountId
+Write-Host "Using AWS Account ID: $TargetAWSAccountId"
+$DefaultAWSAccountName = (Get-AltsGlobal -Name DefaultAWSAccountName)
+$AWSCredential = Get-CyberArkAWSCredentials -CyberArkState $CyberArkState -AWSAccountName $DefaultAWSAccountName -AWSAccountID $TargetAWSAccountId
+
+# === CloudFormation stack deployment (simplified, fill in your logic)
+if ($ExecutionMode -eq "EXECUTE") {
+    Write-Host "Launching stack in EXECUTE mode..."
+    New-ChangeAuditItem -Platform "aws" -Service "cloudformation" -Type "create" # etc
+    $stack = New-CFNStack -StackName $stackName -TemplateBody $templateBody -Parameters $parameters -AccessKey $AWSCredential.AccessKey -SecretKey $AWSCredential.SecretKey
+    # Wait for stack completion, fetch info as in your code
+}
+elseif ($ExecutionMode -eq "TEST") {
+    Write-Host "TEST mode, simulating stack creation..."
+    # Simulate logic here
+}
+else {
+    throw "Unknown ExecutionMode: $ExecutionMode"
+}
+
+# === Get stack outputs (workaround if no outputs in template)
+$stackResources = Get-CFNStackResource -StackName $stackName -AccessKey $AWSCredential.AccessKey -SecretKey $AWSCredential.SecretKey
+$instanceResource = $stackResources | Where-Object { $_.ResourceType -eq 'AWS::EC2::Instance' }
+$instanceId = $instanceResource.PhysicalResourceId
+$instance = Get-EC2Instance -InstanceIds $instanceId -AccessKey $AWSCredential.AccessKey -SecretKey $AWSCredential.SecretKey
+$privateIp = $instance.Instances[0].PrivateIpAddress
+
+Write-Host "Launched EC2 instanceId: $instanceId, Private IP: $privateIp"
+
+# === Save output to pipeline (for next job/stage)
+# In Azure DevOps, set output variable:
+Write-Host "##vso[task.setvariable variable=LaunchedInstanceId;isOutput=true]$instanceId"
+Write-Host "##vso[task.setvariable variable=LaunchedPrivateIp;isOutput=true]$privateIp"
